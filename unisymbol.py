@@ -57,6 +57,25 @@ import tty
 #subprocess.Popen('xdotool key alt+Tab', shell=True)
 #subprocess.Popen('xdotool key U2132 &', shell=True)
 
+
+class Unisymbol:
+    #grepujeme case insensitive a za kazde slovo dame wildcard
+    def getMatches(query):
+        cmds = []
+        for subquery in query.split(" "):
+            cmds.append("egrep -i '(\s|^)" + subquery + "' ")
+            if len(cmds) == 1:
+                cmds[0] += UNICODE_FILE
+
+        #subquery = "[^\s]* ".join(query.split(" "))
+        #process = subprocess.Popen("egrep -i '(\s|^)" + "[^\s]* ".join(query.split(" ")) + "' " +  UNICODE_FILE + " | head -n 40", stdout=subprocess.PIPE, shell=True)
+
+        popen = " | ".join(cmds) + " | head -n 40"
+        print(popen)
+        process = subprocess.Popen(popen, stdout=subprocess.PIPE, shell=True)
+        return str(process.communicate()[0], "utf-8").split("\n")[:-1]
+
+
 launchInternal = False
 try:
     print(termios.tcgetattr(sys.stdin))
@@ -70,7 +89,7 @@ except:
     #subprocess.Popen('eval $(xdotool getmouselocation --shell)',shell=True)
     #time.sleep(0.5)
 
-    process = subprocess.Popen('gnome-terminal --title=unisymbol -e unisymbol.py --hide-menubar --geometry=100x43+$X+$Y', shell=True,stdout=subprocess.PIPE)
+    process = subprocess.Popen('gnome-terminal --title=unisymbol -e unisymbol.py --hide-menubar --geometry=100x43+$X+$Y', shell=True, stdout=subprocess.PIPE)
     #s = subprocess.check_call('gnome-terminal --title=unisymbol --hide-menubar --geometry=80x23+$X+$Y -x bash -c unisymbol.py', shell=True)
     #process.communicate()
     #process.wait()
@@ -84,141 +103,133 @@ except:
 
 
 if launchInternal:
-        sys.stdout.write("\033c") #clear screen, je kdoviproc necim zaneradena
+    sys.stdout.write("\033c") #clear screen, je kdoviproc necim zaneradena
 
-        #funkce na read stdin
-        def getkey():
-            old_settings = termios.tcgetattr(sys.stdin)
-            tty.setraw(sys.stdin.fileno())
-            select.select([sys.stdin], [], [], 0)
-            answer = sys.stdin.read(1)
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-            return answer
+    #funkce na read stdin
+    def getkey():
+        old_settings = termios.tcgetattr(sys.stdin)
+        tty.setraw(sys.stdin.fileno())
+        select.select([sys.stdin], [], [], 0)
+        answer = sys.stdin.read(1)
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+        return answer
 
 
 
+    #init
+    query = lastQuery = "" #prikaz uzivatele
+    caret = {'pos':0, 'altPos':0, 'text':""}  #pozice kurzoru
+    matches = [] # XX lze sem dat recentne pouzite
+
+    #engine
+    while 1:
         #init
-        query = "" #prikaz uzivatele
-        caret = {'pos':0, 'altPos':0, 'text':""}  #pozice kurzoru
-        matches = [] # XX lze sem dat recentne pouzite
-
-        #engine
-        while 1:
-            #init
-            print("\x1B[3m" + (query if query else " ** character description **") + "\x1B[23m")# italikem vypsat prikaz
-            menu = [] #mozne prikazy uzivatele
-            caret['altPos'] = 0 #mozne umisteni karetu - na zacatek
-
-            if query: #grepujeme case insensitive a za kazde slovo dame wildcard
-                subquery = ""
-                subquery = "[^\s]* ".join(query.split(" "))
-                #for word in query.split(" "):
-                #    subquery += word + "[^\s]* "
-                process = subprocess.Popen("grep -i '" + "[^\s]* ".join(query.split(" ")) + "' " +  UNICODE_FILE + " | head -n 40", stdout=subprocess.PIPE, shell=True)
-                matches = str(process.communicate()[0], "utf-8").split("\n")[:-1]
+        print("\x1B[3m" + (query if query else " ** character description **") + "\x1B[23m")# italikem vypsat prikaz
+        menu = [] #mozne prikazy uzivatele
+        caret['altPos'] = 0 #mozne umisteni karetu - na zacatek
+        if query and query != lastQuery:
+            matches = Unisymbol.getMatches(query)
     
-                used = set()
-                #i = 0
-                for option in matches:                    
-                    try:
-                        if option[:len("<control>")] == "<control>":
-                            ch = "N/A"
-                        else:
-                            ch = chr(int(option.split("\t")[-1], 16))
-                    except ValueError: #je mozne, nektere znaky unikodu proste nevytiskneme
-                        print("-- znak nelze tisknout -- ")
-                        continue
-                        #ch = #"x"+option.split("\t")[-1]
-                    #print(ch)
-                    if ch not in used: # muze se stat, ze je v listu nejaky unicode znak dvakrat
-                        used.add(ch)
-                        option += " " + ch
-                        menu.append(option) #zaradit mezi moznosti
-                        if option == caret['text']: #karet byl na tehle pozici, pokud se zuzil vyber, budeme vedet, kam karet opravne umistit
-                            caret['altPos'] = len(menu)-1
-                    #i += 1
-                    #if i > 40:
-                    #    break
-                    #uprint(matches)
-                        #if len(used) == 1:
-                        # print("VYBRANO: " + used.pop())
-
-            #osetrit vychyleni karetu
-            if caret['pos'] < 0 or caret['pos'] > len(menu)-1: #umistit karet na zacatek ci konec seznamu
-                caret['pos'] = caret['altPos']
-
-            #vypsat menu
-            #print("caret:" + str(caret['pos']))
-            for i in range(0, len(menu)):
-                if i == caret['pos']: #karet je na pozici
-                    caret['text'] = menu[i]
-                    print('\033[1m' + menu[i] + '\033[0m')#vypsat moznost tucne
-                else:
-                    try:
-                        print(menu[i])
-                    except:
-                        print("CHYBA")
-                        print(menu[i][0:-1])
-            #print("query" + query)
-            #print("list:"+ list(config['MENU'])[caret])
-            stop = False
-            #vyhodnotit moznost
-            if len(menu) != 1: #stale mame vic moznosti
-                key = getkey()
-
-                if ord(key) == 27: #escape sequence
-                    print("Hit escape for exit...") #pokud jsem predtim napsal sipku, dalsi 2 znaky automaticky cekaji
-                    key = getkey()
-                    if ord(key) == 27: #dvojity escape - ukonceni
-                        exit()
-                    elif ord(key) == 91: #sipka
-                        key = getkey()
-                        if ord(key) == 65: #sipka nahoru
-                            caret['pos'] -= 1
-                        if ord(key) == 66: #sipka dolu
-                            caret['pos'] += 1
-                    elif ord(key) == 79: #home/end
-                        key = getkey()
-                        if ord(key) == 72: #home
-                            caret['pos'] = 0
-                        if ord(key) == 70: #end
-                            caret['pos'] = len(menu) -1
+            used = set()
+            #i = 0
+            for option in matches:
+                try:
+                    if option[:len("<control>")] == "<control>":
+                        ch = "N/A"
                     else:
-                        print("NIC!")
-                elif(key == '\x08' or key == '\x7f'):#backspace
-                    caret['pos'] = -1
-                    query = query[:-1]
-                elif(ord(key) == 13): #enter
-                    menu = [menu[caret['pos']]] #launch command at caret
-                elif(key == '\x03' or key == '\x04'):#interrupt  (zel nefunguje)
+                        ch = chr(int(option.split("\t")[-1], 16))
+                except ValueError: #je mozne, nektere znaky unikodu proste nevytiskneme
+                    print("-- znak nelze tisknout -- ")
+                    continue
+                    #ch = #"x"+option.split("\t")[-1]
+                #print(ch)
+                if ch not in used: # muze se stat, ze je v listu nejaky unicode znak dvakrat
+                    used.add(ch)
+                    option += " " + ch
+                    menu.append(option) #zaradit mezi moznosti
+                    if option == caret['text']: #karet byl na tehle pozici, pokud se zuzil vyber, budeme vedet, kam karet opravne umistit
+                        caret['altPos'] = len(menu)-1
+                #i += 1
+                #if i > 40:
+                #    break
+                #uprint(matches)
+                    #if len(used) == 1:
+                    # print("VYBRANO: " + used.pop())
+
+        #osetrit vychyleni karetu
+        if caret['pos'] < 0 or caret['pos'] > len(menu)-1: #umistit karet na zacatek ci konec seznamu
+            caret['pos'] = caret['altPos']
+
+        #vypsat menu
+        #print("caret:" + str(caret['pos']))
+        for i in range(0, len(menu)):
+            if i == caret['pos']: #karet je na pozici
+                caret['text'] = menu[i]
+                print('\033[1m' + menu[i] + '\033[0m')#vypsat moznost tucne
+            else:
+                try:
+                    print(menu[i])
+                except:
+                    print("CHYBA")
+                    print(menu[i][0:-1])
+        #print("query" + query)
+        #print("list:"+ list(config['MENU'])[caret])
+        stop = False
+        #vyhodnotit moznost
+        if len(menu) != 1: #stale mame vic moznosti
+            key = getkey()
+
+            if ord(key) == 27: #escape sequence
+                #print("Hit escape for exit...") #pokud jsem predtim napsal sipku, dalsi 2 znaky automaticky cekaji
+                key = getkey()
+                if ord(key) == 27: #dvojity escape - ukonceni
                     exit()
-                elif(49 <= ord(key) <= 57):#cisla spousti prikaz na danem radku
-                    menu = [menu[ord(key)-49]]
-                    #query = menu[ord(key)-49] #launch command at number
+                elif ord(key) == 91: #sipka
+                    key = getkey()
+                    if ord(key) == 65: #sipka nahoru = znaky: 27 91 65
+                        caret['pos'] -= 1
+                    if ord(key) == 66: #sipka dolu = znaky: 27 91 66
+                        caret['pos'] += 1
+                elif ord(key) == 79: #home/end
+                    key = getkey()
+                    if ord(key) == 72: #home
+                        caret['pos'] = 0
+                    if ord(key) == 70: #end
+                        caret['pos'] = len(menu) -1
                 else:
-                    print("ZDE")
-                    caret['pos'] = -1
-                    query += key
+                    print("NIC!")
+            elif(key == '\x08' or key == '\x7f'):#backspace
+                caret['pos'] = -1
+                query = query[:-1]
+            elif(ord(key) == 13): #enter
+                menu = [menu[caret['pos']]] #launch command at caret
+            elif(key == '\x03' or key == '\x04'):#interrupt  (zel nefunguje)
+                exit()
+            elif(49 <= ord(key) <= 57):#cisla spousti prikaz na danem radku
+                menu = [menu[ord(key)-49]]
+                #query = menu[ord(key)-49] #launch command at number
+            else:
+                print("ZDE")
+                caret['pos'] = -1
+                query += key
 
-            if stop:
-                print("l", len(menu))
-                exit(0)
+        if stop:
+            print("l", len(menu))
+            exit(0)
 
 
-            if len(menu) == 1: #vybrana 1 moznost ke spusteni
-                sys.stdout.write("\033c");#clear terminal
-                #c = menu[0]
-                sys.stdout.write("\x1b]0;" + menu[0] + "\x07") #gnome-terminal title
-                result = menu[0].split(" ")[-1] # + result
-                print(result)
-                print(hex(ord(result)).split('x')[1])                
-                subprocess.Popen('xdotool key alt+Tab && xdotool key U' + hex(ord(result)).split('x')[1] + ' &', shell=True) #spusti podproces, odpoji ho od terminalu. Ten balast na konci je pro silent start nohupu.
+        if len(menu) == 1: #vybrana 1 moznost ke spusteni
+            sys.stdout.write("\033c");#clear terminal
+            #c = menu[0]
+            sys.stdout.write("\x1b]0;" + menu[0] + "\x07") #gnome-terminal title
+            result = menu[0].split(" ")[-1] # + result
+            print(menu[0]) # result
+            print(hex(ord(result)).split('x')[1])
+            subprocess.Popen('xdotool key alt+Tab && xdotool key U' + hex(ord(result)).split('x')[1] + ' &', shell=True) #spusti podproces, odpoji ho od terminalu. Ten balast na konci je pro silent start nohupu.
 
-                #ihned skoncit, at muzu dal psat time.sleep(0.5)
-                time.sleep(0.5) # xdotool musi mit cas se napsat -> kdyz skoncim moc brzo, xdotool se nepovede. Zatim je to tahle klicka.
-                #getkey()
-                exit(0)
-                #sys._exit(0)
-            sys.stdout.write("\033c") #clear screen
-
-    
+            #ihned skoncit, at muzu dal psat time.sleep(0.5)
+            time.sleep(0.5) # xdotool musi mit cas se napsat -> kdyz skoncim moc brzo, xdotool se nepovede. Zatim je to tahle klicka.
+            #getkey()
+            exit(0)
+            #sys._exit(0)
+        sys.stdout.write("\033c") #clear screen
